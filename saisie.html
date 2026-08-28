@@ -20,6 +20,25 @@
 
   <div id="banner"></div>
 
+  <div class="card" id="importCard" style="margin-bottom:16px;">
+    <div class="card__head">
+      <h2>Importer depuis un mail DomAlerte</h2>
+      <span class="hint">Collez le texte du mail reçu — le formulaire se pré-remplit automatiquement</span>
+    </div>
+    <div class="card__pad">
+      <div id="importBanner"></div>
+      <textarea id="importText" rows="6" placeholder="Collez ici le texte complet du mail DomAlerte (à partir de « Nom » jusqu'à la fin)…" style="font-family: var(--font-mono); font-size:12px;"></textarea>
+      <div class="pillbar" style="justify-content:flex-end; margin-top:10px;">
+        <button type="button" class="btn btn-ghost btn-sm" id="btnClearImport">Effacer</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnParseImport">Analyser et pré-remplir</button>
+      </div>
+      <p class="note" style="margin-top:8px;">
+        L'extraction est automatique mais imparfaite : <strong>vérifiez chaque champ pré-rempli avant d'enregistrer</strong>,
+        en particulier l'agence/DT et le poste qui ne sont pas toujours reconnus tels quels.
+      </p>
+    </div>
+  </div>
+
   <form id="form" class="card" style="display:none;">
     <div class="card__pad">
 
@@ -153,6 +172,7 @@
 
   async function boot(){
     if (editId){
+      document.getElementById('importCard').style.display = 'none';
       document.getElementById('pageTitle').textContent = 'Modifier la fiche';
       document.getElementById('banner').innerHTML = `<div class="banner banner-info">Chargement de la fiche…</div>`;
       try{
@@ -233,6 +253,158 @@
   });
 
   boot();
+
+  /* ============ Import depuis un mail DomAlerte ============ */
+
+  function escapeRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  function normalizeAccents(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
+
+  function matchOption(value, list){
+    const nv = normalizeAccents(value);
+    if (!nv) return '';
+    let found = list.find(o => normalizeAccents(o) === nv);
+    if (found) return found;
+    found = list.find(o => nv.includes(normalizeAccents(o)) || normalizeAccents(o).includes(nv));
+    return found || '';
+  }
+
+  function exactLineField(text, label){
+    const re = new RegExp('^\\s*' + escapeRe(label) + '\\s*$\\r?\\n+\\s*([^\\r\\n]+)', 'mi');
+    const m = text.match(re);
+    return m ? m[1].trim() : '';
+  }
+
+  function yesnoField(text, label, windowSize = 260){
+    const idx = text.toLowerCase().indexOf(label.toLowerCase());
+    if (idx === -1) return '';
+    const slice = text.slice(idx, idx + windowSize);
+    const m = slice.match(/Oui\s*(☒|☐)\s*Non\s*(☒|☐)/);
+    if (!m) return '';
+    if (m[1] === '☒') return 'Oui';
+    if (m[2] === '☒') return 'Non';
+    return '';
+  }
+
+  function firstMatchYesNo(text, pairs){
+    for (const [label, value] of pairs){
+      if (yesnoField(text, label) === 'Oui') return value;
+    }
+    return '';
+  }
+
+  function blockBetween(text, startLabel, endLabels){
+    const startRe = new RegExp('^\\s*' + escapeRe(startLabel) + '\\s*$', 'mi');
+    const startMatch = text.match(startRe);
+    if (!startMatch) return '';
+    const after = text.slice(startMatch.index + startMatch[0].length);
+    let endIdx = after.length;
+    for (const end of endLabels){
+      const m = after.match(new RegExp('^\\s*' + escapeRe(end) + '\\s*$', 'mi'));
+      if (m && m.index < endIdx) endIdx = m.index;
+    }
+    return after.slice(0, endIdx)
+      .split('\n')
+      .filter(line => !/^\s*\([^)]*\)\s*$/.test(line))
+      .join('\n')
+      .replace(/^\s+|\s+$/g, '')
+      .replace(/\n{3,}/g, '\n\n');
+  }
+
+  function frDateToIso(raw){
+    const m = String(raw||'').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return '';
+    return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  }
+
+  function parseDomAlerteEmail(text){
+    const notes = [];
+
+    const posteRaw = exactLineField(text, 'Poste occupé');
+    const poste = matchOption(posteRaw, OPTIONS.poste);
+    if (posteRaw && !poste) notes.push(`Poste « ${posteRaw} » non reconnu — à sélectionner manuellement.`);
+
+    const auteurNom = exactLineField(text, 'Nom, Prénom (si possible)');
+    let circonstances = blockBetween(text, 'CIRCONSTANCES', ['AUTEUR DES FAITS', 'ACTIONS MENEES', 'ACTIONS MENEES DANS L\u2019IMMEDIAT']);
+    const causes = blockBetween(text, 'Les causes les déclencheurs', ['CONTEXTE']);
+    if (causes) circonstances = `Motif signalé : ${causes}\n\n${circonstances}`.trim();
+    if (auteurNom) circonstances = `${circonstances}\n\n(Auteur identifié : ${auteurNom})`.trim();
+
+    const incident = {
+      nom: exactLineField(text, 'Nom'),
+      prenom: exactLineField(text, 'Prénom'),
+      date: frDateToIso(exactLineField(text, 'Date')),
+      poste: poste,
+      commune: exactLineField(text, 'Commune (lieu des faits)') || exactLineField(text, "Lieu d'emploi"),
+      circonstances: circonstances,
+      assermente: yesnoField(text, 'Je suis assermenté'),
+      datiUtilise: yesnoField(text, 'Déclenchement DATI'),
+      appelPolice: yesnoField(text, 'Appel Police, Gendarmerie'),
+      interventionPolice: yesnoField(text, 'Intervention de la Police ou Gendarmerie'),
+      depotPlainte: yesnoField(text, 'Plainte'),
+      mainCourante: yesnoField(text, 'Main courante'),
+      natureFaits: firstMatchYesNo(text, [
+        ['Agression physique', 'Agression physique'],
+        ['Agression verbale avec menace', 'Agression verbale avec menace (intimidation, menaces de mort, …)'],
+        ['Agression verbale sans menace', 'Agression verbale sans menace (injures)'],
+        ['Comportement inapproprié', 'Comportement inapproprié (remarques méprisantes, humiliantes)'],
+      ]),
+      contexte: firstMatchYesNo(text, [
+        ['Sans motif apparent', 'Sans motif apparent'],
+        ['Différent lié au paiement du loyer', 'Différend lié au paiement du loyer'],
+        ['Demande de mutation', 'Demande de mutation'],
+        ["Différent lié à une insatisfaction du locataire", "Différend lié à une insatisfaction du locataire"],
+        ["Remarque ou rappel des règles d'usage", "Remarque ou rappel des règles d'usage"],
+        ["Trouble du comportement de l'agresseur", "Trouble du comportement de l'agresseur"],
+        ['Intervention sur un délit flagrant', 'Intervention sur un délit flagrant'],
+        ['Agression pour demande de logement non résolue', 'Agression pour demande de logement non résolue'],
+        ['Rassemblement dans les halls', 'Rassemblement dans les halls/parties communes'],
+      ]),
+      auteurFaits: firstMatchYesNo(text, [
+        ['Locataire de la résidence', 'Locataire de la résidence'],
+        ["Locataire d'une résidence Domofrance", "Locataire d'une résidence Domofrance"],
+        ['Famille, proche ou ami du locataire', 'Famille, proche ou ami du locataire'],
+        ['Personne extérieure à Domofrance', 'Personne extérieure à Domofrance'],
+      ]),
+      lieuFaits: firstMatchYesNo(text, [
+        ['Téléphone', 'Téléphone'],
+        ['Parties communes', 'Parties communes'],
+        ['Parties privatives', 'Parties privatives'],
+      ]),
+      orientations: firstMatchYesNo(text, [
+        ['Orientation Cellule psychologique', 'Cellule psychologique'],
+        ['Orientation Médecin traitant', 'Médecin traitant'],
+      ]),
+    };
+
+    return { incident, notes };
+  }
+
+  document.getElementById('btnParseImport').addEventListener('click', () => {
+    const raw = document.getElementById('importText').value;
+    if (!raw.trim()){
+      document.getElementById('importBanner').innerHTML = `<div class="banner banner-warn">Collez d'abord le texte du mail.</div>`;
+      return;
+    }
+    try{
+      const { incident, notes } = parseDomAlerteEmail(raw);
+      const found = Object.entries(incident).filter(([k,v]) => v).length;
+      if (found === 0){
+        document.getElementById('importBanner').innerHTML = `<div class="banner banner-warn">Aucun champ reconnu — le texte collé ne correspond peut-être pas au format habituel. Le formulaire n'a pas été modifié.</div>`;
+        return;
+      }
+      fillForm(incident);
+      let msg = `${found} champ(s) pré-rempli(s) à partir du mail. Vérifiez et complétez avant d'enregistrer (agence/DT, sexe, activité, mail manager, et tout le suivi RH restent à compléter manuellement).`;
+      if (notes.length) msg += '<br>' + notes.join('<br>');
+      document.getElementById('importBanner').innerHTML = `<div class="banner banner-ok">${msg}</div>`;
+    }catch(err){
+      document.getElementById('importBanner').innerHTML = `<div class="banner banner-error">Échec de l'analyse : ${escapeHtml(err.message)}</div>`;
+    }
+  });
+
+  document.getElementById('btnClearImport').addEventListener('click', () => {
+    document.getElementById('importText').value = '';
+    document.getElementById('importBanner').innerHTML = '';
+  });
 </script>
 </body>
 </html>
