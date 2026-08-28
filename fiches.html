@@ -85,7 +85,6 @@
     <p class="hint" id="viewSubtitle" style="margin:0 0 16px;"></p>
     <div id="viewBody"></div>
     <div class="row" style="margin-top:18px;">
-      <a class="btn btn-ghost" id="viewEditLink" href="#">Modifier cette fiche</a>
       <button class="btn btn-primary" id="closeView2">Fermer</button>
     </div>
   </div>
@@ -194,7 +193,6 @@
     if (!inc) return;
     document.getElementById('viewTitle').textContent = `${inc.nom || ''} ${inc.prenom || ''}`.trim() || 'Fiche incident';
     document.getElementById('viewSubtitle').textContent = `${fmtDate(inc.date)} · ${inc.agence || 'Agence non renseignée'}`;
-    document.getElementById('viewEditLink').href = `saisie.html?id=${encodeURIComponent(inc.id)}`;
 
     const row = (label, valueHtml) => `<div style="padding:7px 0; border-bottom:1px solid var(--line); display:grid; grid-template-columns:220px 1fr; gap:10px; font-size:13px;"><span style="color:var(--ink-faint); font-weight:600;">${label}</span><span>${valueHtml}</span></div>`;
     const section = (title) => `<div class="section-title" style="margin-top:18px;">${title}</div>`;
