@@ -92,8 +92,8 @@
     </div>
 
     <div class="card">
-      <div class="card__head"><h2>Suites données</h2><span class="hint">Dépôt de plainte · main courante · convocation</span></div>
-      <div class="card__pad"><canvas id="chartSuites" height="90"></canvas></div>
+      <div class="card__head"><h2>Suites données</h2><span class="hint">Actions engagées suite aux incidents — même structure que la synthèse trimestrielle Sécurité Santé</span></div>
+      <div class="card__pad"><canvas id="chartSuites" height="220"></canvas></div>
     </div>
   </div>
 
@@ -132,6 +132,26 @@
     });
     if (current) lines.push(current);
     return lines;
+  }
+
+  /** Reprend les catégories de la synthèse trimestrielle "Point Sécurité Santé" (appels police, mails manager,
+      orientations, suivis judiciaires, PSTR, etc.), calculées dynamiquement depuis les données filtrées. */
+  function computeSuitesDonnees(list){
+    const isActionPstr = (v) => v && v !== 'Pas de déplacement' && v !== "Pas d'intervention";
+    return [
+      ['Appels police / gendarmerie', list.filter(i => i.appelPolice === 'Oui').length],
+      ['Interventions police / gendarmerie', list.filter(i => i.interventionPolice === 'Oui').length],
+      ['Mails manager', list.filter(i => i.mailManager === 'Oui').length],
+      ['Dépôts de plainte', list.filter(i => i.depotPlainte === 'Oui').length],
+      ['Mains courantes', list.filter(i => i.mainCourante === 'Oui').length],
+      ['Convocations locataire', list.filter(i => i.convocationLocataire === 'Oui').length],
+      ['Courriers auteur des faits', list.filter(i => i.suiviSuiteFaits === 'Courrier auteur des faits').length],
+      ['Entretiens N+1', list.filter(i => i.suiviSuiteFaits === 'Entretien n+1').length],
+      ['Suivis à chaud (5 j.)', list.filter(i => i.suiviResponsable === 'À chaud 5 jours ouvrés').length],
+      ['Orientations (cellule psy. / médecin)', list.filter(i => i.orientations === 'Cellule psychologique' || i.orientations === 'Médecin traitant').length],
+      ['Suivis judiciaires en cours', list.filter(i => i.suivi === 'suivi judiciaire en cours').length],
+      ['Accompagnements PSTR', list.filter(i => isActionPstr(i.suiviPstr)).length],
+    ];
   }
 
   function destroyCharts(){ Object.values(charts).forEach(c => c && c.destroy()); charts = {}; }
@@ -347,26 +367,24 @@
     });
 
     // ---- Suites données ----
-    const suitesLabels = ['Dépôt de plainte', 'Main courante', 'Convocation locataire', 'Intervention police'];
-    const suitesData = [
-      list.filter(i=>i.depotPlainte==='Oui').length,
-      list.filter(i=>i.mainCourante==='Oui').length,
-      list.filter(i=>i.convocationLocataire==='Oui').length,
-      list.filter(i=>i.interventionPolice==='Oui').length,
-    ];
-    const suitesMax = Math.max(...suitesData, 1);
+    const suites = computeSuitesDonnees(list);
+    const suitesMax = Math.max(...suites.map(e=>e[1]), 1);
+    const totalActions = suites.reduce((s,e) => s + e[1], 0);
     charts.suites = new Chart(document.getElementById('chartSuites'), {
       type: 'bar',
-      data: { labels: suitesLabels, datasets:[{ label:'Oui', data: suitesData, backgroundColor: PALETTE[1] }] },
+      data: { labels: suites.map(e=>e[0]), datasets:[{ label:'Nombre', data: suites.map(e=>e[1]), backgroundColor: PALETTE[1] }] },
       options: {
+        indexAxis:'y',
         plugins:{
           legend:{display:false},
-          datalabels:{ anchor:'end', align:'top', color: '#1C222B', font:{weight:600, size:12}, formatter: v => v }
+          datalabels:{ anchor:'end', align:'end', color: '#1C222B', font:{weight:600, size:12}, formatter: v => v }
         },
-        layout:{ padding:{ top: 14 } },
-        scales:{ y:{ beginAtZero:true, ticks:{precision:0}, suggestedMax: suitesMax * 1.25 } }
+        layout:{ padding:{ right: 28 } },
+        scales:{ x:{ beginAtZero:true, ticks:{precision:0}, suggestedMax: suitesMax * 1.2 }, y:{ ticks:{ font:{size:11.5} } } }
       }
     });
+    document.querySelector('#chartSuites').closest('.card').querySelector('.hint').textContent =
+      `${totalActions} action${totalActions>1?'s':''} comptabilisée${totalActions>1?'s':''} sur la sélection`;
   }
 
   function populateFilters(){
@@ -473,18 +491,16 @@
       XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
     });
 
-    // ---- Suites données ----
-    const suitesRows = [
-      ['Suite donnée', 'Nombre', '% des incidents filtrés'],
-      ['Dépôt de plainte', nPlainte, total ? Math.round((nPlainte/total)*100) + '%' : '—'],
-      ['Main courante', nMainCourante, total ? Math.round((nMainCourante/total)*100) + '%' : '—'],
-      ['Convocation locataire', nConvocation, total ? Math.round((nConvocation/total)*100) + '%' : '—'],
-      ['Intervention police / gendarmerie', nPolice, total ? Math.round((nPolice/total)*100) + '%' : '—'],
-      ['Mutation envisagée', nMutation, total ? Math.round((nMutation/total)*100) + '%' : '—'],
-      ['ITT judiciaire', nItt, total ? Math.round((nItt/total)*100) + '%' : '—'],
-    ];
+    // ---- Suites données (mêmes catégories que le graphique) ----
+    const suitesEntries = computeSuitesDonnees(list);
+    const suitesRows = [['Suite donnée', 'Nombre', '% des incidents filtrés']]
+      .concat(suitesEntries.map(([label, n]) => [label, n, total ? Math.round((n/total)*100) + '%' : '—']))
+      .concat([
+        ['Mutation envisagée', nMutation, total ? Math.round((nMutation/total)*100) + '%' : '—'],
+        ['ITT judiciaire', nItt, total ? Math.round((nItt/total)*100) + '%' : '—'],
+      ]);
     const wsSuites = XLSX.utils.aoa_to_sheet(suitesRows);
-    wsSuites['!cols'] = [{wch:34},{wch:10},{wch:20}];
+    wsSuites['!cols'] = [{wch:38},{wch:10},{wch:20}];
     XLSX.utils.book_append_sheet(wb, wsSuites, 'Suites données');
 
     const filterTag = [year !== 'Toutes' ? year : null, quarterVal ? 'T'+quarterVal : null].filter(Boolean).join('_') || 'toutes-periodes';
