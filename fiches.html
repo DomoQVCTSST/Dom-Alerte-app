@@ -76,6 +76,21 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="viewBackdrop" style="display:none;">
+  <div class="modal" style="max-width:720px; max-height:88vh; overflow-y:auto;">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:4px;">
+      <h3 id="viewTitle" style="margin:0;">Fiche incident</h3>
+      <button class="btn btn-ghost btn-sm" id="closeView">Fermer</button>
+    </div>
+    <p class="hint" id="viewSubtitle" style="margin:0 0 16px;"></p>
+    <div id="viewBody"></div>
+    <div class="row" style="margin-top:18px;">
+      <a class="btn btn-ghost" id="viewEditLink" href="#">Modifier cette fiche</a>
+      <button class="btn btn-primary" id="closeView2">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <script src="github-db.js"></script>
 <script src="auth.js"></script>
 <script src="app-data.js"></script>
@@ -130,11 +145,15 @@
         <td><span class="tag ${i.depotPlainte==='Oui'?'tag-oui':'tag-non'}">${i.depotPlainte || 'Non'}</span></td>
         <td><span class="tag ${i.interventionPolice==='Oui'?'tag-oui':'tag-non'}">${i.interventionPolice || 'Non'}</span></td>
         <td style="white-space:nowrap;">
+          <button class="btn btn-ghost btn-sm" data-view="${i.id}">Afficher</button>
           <a class="btn btn-ghost btn-sm" href="saisie.html?id=${encodeURIComponent(i.id)}">Modifier</a>
           <button class="btn btn-danger btn-sm" data-del="${i.id}">Suppr.</button>
         </td>
       </tr>
     `).join('');
+    tbody.querySelectorAll('[data-view]').forEach(btn => {
+      btn.addEventListener('click', () => openViewModal(btn.dataset.view));
+    });
     tbody.querySelectorAll('[data-del]').forEach(btn => {
       btn.addEventListener('click', () => { pendingDeleteId = btn.dataset.del; document.getElementById('confirmBackdrop').style.display = 'flex'; });
     });
@@ -165,6 +184,76 @@
   document.getElementById('btnExport').addEventListener('click', () => {
     exportIncidentsToExcel(filtered(), `domalerte_export_${new Date().toISOString().slice(0,10)}.xlsx`);
   });
+
+  /** Libellés lisibles pour les valeurs Oui/Non/vide dans la fiche de consultation. */
+  function yn(v){ return v === 'Oui' ? '<span class="tag tag-oui">Oui</span>' : (v === 'Non' ? '<span class="tag tag-non">Non</span>' : '<span class="hint">—</span>'); }
+  function txt(v){ return v ? escapeHtml(v) : '<span class="hint">—</span>'; }
+
+  function openViewModal(id){
+    const inc = ALL.find(i => i.id === id);
+    if (!inc) return;
+    document.getElementById('viewTitle').textContent = `${inc.nom || ''} ${inc.prenom || ''}`.trim() || 'Fiche incident';
+    document.getElementById('viewSubtitle').textContent = `${fmtDate(inc.date)} · ${inc.agence || 'Agence non renseignée'}`;
+    document.getElementById('viewEditLink').href = `saisie.html?id=${encodeURIComponent(inc.id)}`;
+
+    const row = (label, valueHtml) => `<div style="padding:7px 0; border-bottom:1px solid var(--line); display:grid; grid-template-columns:220px 1fr; gap:10px; font-size:13px;"><span style="color:var(--ink-faint); font-weight:600;">${label}</span><span>${valueHtml}</span></div>`;
+    const section = (title) => `<div class="section-title" style="margin-top:18px;">${title}</div>`;
+
+    document.getElementById('viewBody').innerHTML = `
+      ${section('Identification')}
+      ${row('Nom / Prénom', txt(`${inc.nom || ''} ${inc.prenom || ''}`.trim()))}
+      ${row('Sexe', txt(inc.sexe))}
+      ${row('Date de l\'incident', txt(fmtDate(inc.date)))}
+      ${row('Poste occupé', txt(inc.poste))}
+      ${row('Agence / DT', txt(inc.agence))}
+
+      ${section('Les faits')}
+      ${row('Nature des faits', txt(inc.natureFaits))}
+      ${row('Activité au moment des faits', txt(inc.activite))}
+      ${row('Contexte', txt(inc.contexte))}
+      ${row('Auteur des faits', txt(inc.auteurFaits))}
+      ${row('Lieu des faits', txt(inc.lieuFaits))}
+      ${row('Commune', txt(inc.commune))}
+      ${row('Circonstances', `<div style="white-space:pre-wrap;">${txt(inc.circonstances)}</div>`)}
+
+      ${section('Réponse immédiate')}
+      ${row('Appel police / gendarmerie', yn(inc.appelPolice))}
+      ${row('Intervention police / gendarmerie', yn(inc.interventionPolice))}
+      ${row('Mail manager', yn(inc.mailManager))}
+      ${row('DOMALERTE déclenchée', yn(inc.domalerte))}
+      ${row('Dépôt de plainte', yn(inc.depotPlainte))}
+      ${row('Main courante', yn(inc.mainCourante))}
+
+      ${section('Suivi RH & juridique')}
+      ${row('Mutation envisagée', yn(inc.mutationEnvisagee))}
+      ${row('ITT judiciaire', yn(inc.ittJudiciaire))}
+      ${row('Convocation locataire', yn(inc.convocationLocataire))}
+      ${row('Date de convocation', txt(inc.dateConvocation ? fmtDate(inc.dateConvocation) : ''))}
+      ${row('DATI utilisé', yn(inc.datiUtilise))}
+      ${row('Assermenté', yn(inc.assermente))}
+      ${row('Orientations', txt(inc.orientations))}
+      ${row('Suivi responsable / DT', txt(inc.suiviResponsable))}
+      ${row('Suivi (judiciaire)', txt(inc.suivi))}
+      ${row('Suivi suite aux faits', txt(inc.suiviSuiteFaits))}
+      ${row('Suivi PSTR', txt(inc.suiviPstr))}
+
+      ${section('Pièces jointes & commentaires')}
+      ${row('PJ1', txt(inc.pj1))}
+      ${row('PJ2', txt(inc.pj2))}
+      ${row('Commentaires', `<div style="white-space:pre-wrap;">${txt(inc.commentaires)}</div>`)}
+
+      ${section('Traçabilité')}
+      ${row('Créée le', txt(inc.createdAt ? new Date(inc.createdAt).toLocaleString('fr-FR') : ''))}
+      ${row('Créée par', txt(inc.createdBy))}
+      ${row('Dernière modification', txt(inc.updatedAt ? new Date(inc.updatedAt).toLocaleString('fr-FR') : ''))}
+      ${row('Modifiée par', txt(inc.updatedBy))}
+    `;
+    document.getElementById('viewBackdrop').style.display = 'flex';
+  }
+
+  document.getElementById('closeView').addEventListener('click', () => { document.getElementById('viewBackdrop').style.display = 'none'; });
+  document.getElementById('closeView2').addEventListener('click', () => { document.getElementById('viewBackdrop').style.display = 'none'; });
+  document.getElementById('viewBackdrop').addEventListener('click', (e) => { if (e.target.id === 'viewBackdrop') document.getElementById('viewBackdrop').style.display = 'none'; });
 
   document.getElementById('cancelDelete').addEventListener('click', () => { pendingDeleteId = null; document.getElementById('confirmBackdrop').style.display = 'none'; });
   document.getElementById('confirmDelete').addEventListener('click', async () => {
