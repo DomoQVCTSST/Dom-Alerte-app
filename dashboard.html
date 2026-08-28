@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 <script src="vendor/chart.umd.min.js"></script>
 <script src="vendor/chartjs-plugin-datalabels.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
 </head>
 <body>
 <header class="topbar" id="topbar"></header>
@@ -28,6 +29,7 @@
         <option value="4">T4 · oct-déc</option>
       </select>
       <select id="fAgence" style="width:auto; min-width:220px;"></select>
+      <button class="btn btn-ghost btn-sm" id="btnExportDash">⬇ Exporter (Excel)</button>
       <button class="btn btn-ghost btn-sm" id="btnReset">Réinitialiser</button>
       <button class="btn btn-ghost btn-sm" id="btnRefresh">↻ Actualiser</button>
     </div>
@@ -396,6 +398,98 @@
   document.getElementById('fAgence').addEventListener('change', render);
   document.getElementById('btnReset').addEventListener('click', () => { populateFilters(); document.getElementById('fQuarter').value = ''; render(); });
   document.getElementById('btnRefresh').addEventListener('click', boot);
+  document.getElementById('btnExportDash').addEventListener('click', exportDashboardToExcel);
+
+  /** Exporte un classeur Excel multi-onglets reprenant les chiffres du tableau de bord (période/périmètre filtrés). */
+  function exportDashboardToExcel(){
+    const list = applyFilters();
+    const wb = XLSX.utils.book_new();
+
+    const year = document.getElementById('fYear').value || 'Toutes';
+    const quarterVal = document.getElementById('fQuarter').value;
+    const quarterLabel = { '1':'T1 (janv-mars)', '2':'T2 (avr-juin)', '3':'T3 (juil-sept)', '4':'T4 (oct-déc)' }[quarterVal] || 'Tous';
+    const agenceLabel = document.getElementById('fAgence').value || 'Toutes';
+
+    const total = list.length;
+    const nPlainte = list.filter(i => i.depotPlainte === 'Oui').length;
+    const nPolice = list.filter(i => i.interventionPolice === 'Oui').length;
+    const nMainCourante = list.filter(i => i.mainCourante === 'Oui').length;
+    const nConvocation = list.filter(i => i.convocationLocataire === 'Oui').length;
+    const nMutation = list.filter(i => i.mutationEnvisagee === 'Oui').length;
+    const nItt = list.filter(i => i.ittJudiciaire === 'Oui').length;
+
+    // ---- Résumé ----
+    const resume = [
+      ['DomAlerte — Export du tableau de bord'],
+      ['Généré le', new Date().toLocaleString('fr-FR')],
+      [],
+      ['Filtres appliqués'],
+      ['Année', year],
+      ['Trimestre', quarterLabel],
+      ['Agence / DT', agenceLabel],
+      [],
+      ['Indicateur', 'Valeur'],
+      ['Total incidents', total],
+      ['Dépôts de plainte', nPlainte],
+      ['Intervention police / gendarmerie', nPolice],
+      ['Main courante', nMainCourante],
+      ['Convocation locataire', nConvocation],
+      ['Mutation envisagée', nMutation],
+      ['ITT judiciaire', nItt],
+    ];
+    const wsResume = XLSX.utils.aoa_to_sheet(resume);
+    wsResume['!cols'] = [{wch:32},{wch:20}];
+    XLSX.utils.book_append_sheet(wb, wsResume, 'Résumé');
+
+    // ---- Évolution mensuelle ----
+    const monthLabelsFull = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    const yearForMonths = document.getElementById('fYear').value || new Date().getFullYear().toString();
+    const monthCounts = new Array(12).fill(0);
+    list.forEach(i => {
+      if (i.date && i.date.startsWith(yearForMonths)){
+        const m = parseInt(i.date.slice(5,7), 10) - 1;
+        if (m >= 0 && m < 12) monthCounts[m]++;
+      }
+    });
+    const moisRows = [['Mois', 'Incidents']].concat(monthLabelsFull.map((m,idx) => [m, monthCounts[idx]]));
+    const wsMois = XLSX.utils.aoa_to_sheet(moisRows);
+    wsMois['!cols'] = [{wch:14},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, wsMois, `Évolution ${yearForMonths}`);
+
+    // ---- Répartitions (sans limite de "top N", contrairement aux graphiques) ----
+    const breakdownSheets = [
+      ['Nature des faits', countBy(list, 'natureFaits')],
+      ['Direction territoriale', countBy(list, 'agence')],
+      ['Sexe', countBy(list, 'sexe')],
+      ['Contexte', countBy(list, 'contexte')],
+      ['Postes', countBy(list, 'poste')],
+      ['Auteur des faits', countBy(list, 'auteurFaits')],
+      ['Lieu des faits', countBy(list, 'lieuFaits')],
+    ];
+    breakdownSheets.forEach(([name, entries]) => {
+      const rows = [['Libellé', 'Incidents']].concat(entries.map(([label, count]) => [label, count]));
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [{wch:60},{wch:12}];
+      XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+    });
+
+    // ---- Suites données ----
+    const suitesRows = [
+      ['Suite donnée', 'Nombre', '% des incidents filtrés'],
+      ['Dépôt de plainte', nPlainte, total ? Math.round((nPlainte/total)*100) + '%' : '—'],
+      ['Main courante', nMainCourante, total ? Math.round((nMainCourante/total)*100) + '%' : '—'],
+      ['Convocation locataire', nConvocation, total ? Math.round((nConvocation/total)*100) + '%' : '—'],
+      ['Intervention police / gendarmerie', nPolice, total ? Math.round((nPolice/total)*100) + '%' : '—'],
+      ['Mutation envisagée', nMutation, total ? Math.round((nMutation/total)*100) + '%' : '—'],
+      ['ITT judiciaire', nItt, total ? Math.round((nItt/total)*100) + '%' : '—'],
+    ];
+    const wsSuites = XLSX.utils.aoa_to_sheet(suitesRows);
+    wsSuites['!cols'] = [{wch:34},{wch:10},{wch:20}];
+    XLSX.utils.book_append_sheet(wb, wsSuites, 'Suites données');
+
+    const filterTag = [year !== 'Toutes' ? year : null, quarterVal ? 'T'+quarterVal : null].filter(Boolean).join('_') || 'toutes-periodes';
+    XLSX.writeFile(wb, `domalerte_tableau_de_bord_${filterTag}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
 
   boot();
 </script>
