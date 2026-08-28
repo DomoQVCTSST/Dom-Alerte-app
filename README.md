@@ -4,10 +4,7 @@ Ce dépôt contient uniquement le **site statique** de l'application DomAlerte
 (HTML/CSS/JS). Il ne contient **aucune donnée** : aucune fiche d'incident,
 aucun identifiant, aucun mot de passe.
 
-Les données vivent dans un dépôt **privé** séparé
-(`DomoQVCTSST/Dom-Alerte`), lu et écrit directement depuis le navigateur via
-l'API GitHub, à l'aide d'un token personnel saisi par chaque utilisateur
-autorisé (jamais stocké ici, jamais transmis à un tiers).
+
 
 ## Pourquoi séparer les deux ?
 
