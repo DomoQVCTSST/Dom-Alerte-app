@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fiches / Historique — DomAlerte</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<header class="topbar" id="topbar"></header>
+<nav class="mainnav" id="mainnav"></nav>
+
+<main class="shell">
+  <div class="page-head">
+    <div>
+      <h1>Fiches / Historique</h1>
+      <p>Ensemble des incidents déclarés. Cliquez une ligne pour l'ouvrir.</p>
+    </div>
+    <div class="pillbar">
+      <a href="saisie.html" class="btn btn-primary">+ Nouvelle fiche</a>
+      <button class="btn btn-ghost" id="btnExport">⬇ Exporter (Excel)</button>
+    </div>
+  </div>
+
+  <div id="banner"></div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card__pad">
+      <div class="form-grid" style="align-items:end;">
+        <div class="field"><label>Recherche (nom, agence, commune…)</label><input type="search" id="fSearch" placeholder="Rechercher…"></div>
+        <div class="field"><label>Année</label><select id="fYear"></select></div>
+        <div class="field"><label>Agence / DT</label><select id="fAgence"></select></div>
+        <div class="field"><label>Nature des faits</label><select id="fNature"></select></div>
+        <div class="field"><label>Dépôt de plainte</label><select id="fPlainte"><option value="">Indifférent</option><option>Oui</option><option>Non</option></select></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <h2 id="countLabel">—</h2>
+      <span class="hint">Trier : cliquez un en-tête de colonne</span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="data" id="table">
+        <thead>
+          <tr>
+            <th data-k="date">Date</th>
+            <th data-k="nom">Collaborateur</th>
+            <th data-k="agence">Agence / DT</th>
+            <th data-k="natureFaits">Nature des faits</th>
+            <th data-k="depotPlainte">Plainte</th>
+            <th data-k="interventionPolice">Police</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="emptyRow" style="display:none;">
+      <strong>Aucune fiche ne correspond aux filtres.</strong>
+      Essayez d'élargir votre recherche.
+    </div>
+  </div>
+</main>
+
+<div class="modal-backdrop" id="confirmBackdrop" style="display:none;">
+  <div class="modal">
+    <h3>Supprimer cette fiche ?</h3>
+    <p>Cette action est définitive et retire l'incident de la base partagée.</p>
+    <div class="row">
+      <button class="btn btn-ghost" id="cancelDelete">Annuler</button>
+      <button class="btn btn-danger" id="confirmDelete">Supprimer</button>
+    </div>
+  </div>
+</div>
+
+<script src="github-db.js"></script>
+<script src="auth.js"></script>
+<script src="app-data.js"></script>
+<script>
+  const session = AUTH.requireSession();
+  renderChrome('fiches.html');
+
+  let ALL = [];
+  let sortKey = 'date';
+  let sortDir = -1;
+  let pendingDeleteId = null;
+
+  function filtered(){
+    const q = document.getElementById('fSearch').value.trim().toLowerCase();
+    const year = document.getElementById('fYear').value;
+    const agence = document.getElementById('fAgence').value;
+    const nature = document.getElementById('fNature').value;
+    const plainte = document.getElementById('fPlainte').value;
+
+    return ALL.filter(i => {
+      if (year && !(i.date||'').startsWith(year)) return false;
+      if (agence && i.agence !== agence) return false;
+      if (nature && i.natureFaits !== nature) return false;
+      if (plainte && i.depotPlainte !== plainte) return false;
+      if (q){
+        const hay = [i.nom,i.prenom,i.agence,i.commune,i.natureFaits,i.contexte,i.lieuFaits].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    }).sort((a,b) => {
+      const av = (a[sortKey]||''), bv = (b[sortKey]||'');
+      return av < bv ? -1*sortDir : av > bv ? 1*sortDir : 0;
+    });
+  }
+
+  function renderTable(){
+    const list = filtered();
+    document.getElementById('countLabel').textContent = `${list.length} fiche${list.length>1?'s':''}`;
+    const tbody = document.getElementById('tbody');
+    if (list.length === 0){
+      tbody.innerHTML = '';
+      document.getElementById('emptyRow').style.display = 'block';
+      return;
+    }
+    document.getElementById('emptyRow').style.display = 'none';
+    tbody.innerHTML = list.map(i => `
+      <tr>
+        <td>${fmtDate(i.date)}</td>
+        <td><span class="badge-severity sev-${severityOf(i)}"></span>${escapeHtml(i.nom)} ${escapeHtml(i.prenom)}</td>
+        <td>${escapeHtml(i.agence || '—')}</td>
+        <td>${escapeHtml(i.natureFaits || '—')}</td>
+        <td><span class="tag ${i.depotPlainte==='Oui'?'tag-oui':'tag-non'}">${i.depotPlainte || 'Non'}</span></td>
+        <td><span class="tag ${i.interventionPolice==='Oui'?'tag-oui':'tag-non'}">${i.interventionPolice || 'Non'}</span></td>
+        <td style="white-space:nowrap;">
+          <a class="btn btn-ghost btn-sm" href="saisie.html?id=${encodeURIComponent(i.id)}">Modifier</a>
+          <button class="btn btn-danger btn-sm" data-del="${i.id}">Suppr.</button>
+        </td>
+      </tr>
+    `).join('');
+    tbody.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', () => { pendingDeleteId = btn.dataset.del; document.getElementById('confirmBackdrop').style.display = 'flex'; });
+    });
+  }
+
+  function populateFilterOptions(){
+    const years = Array.from(new Set(ALL.map(i => i.date ? i.date.slice(0,4) : null).filter(Boolean))).sort().reverse();
+    document.getElementById('fYear').innerHTML = `<option value="">Toutes</option>` + years.map(y=>`<option>${y}</option>`).join('');
+    const agences = Array.from(new Set(ALL.map(i => i.agence).filter(Boolean))).sort();
+    document.getElementById('fAgence').innerHTML = `<option value="">Toutes</option>` + agences.map(a=>`<option>${escapeHtml(a)}</option>`).join('');
+    const natures = Array.from(new Set(ALL.map(i => i.natureFaits).filter(Boolean))).sort();
+    document.getElementById('fNature').innerHTML = `<option value="">Toutes</option>` + natures.map(n=>`<option>${escapeHtml(n)}</option>`).join('');
+  }
+
+  document.querySelectorAll('#table thead th[data-k]').forEach(th => {
+    th.addEventListener('click', () => {
+      const k = th.dataset.k;
+      if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = 1; }
+      renderTable();
+    });
+  });
+
+  ['fSearch','fYear','fAgence','fNature','fPlainte'].forEach(id => {
+    document.getElementById(id).addEventListener('input', renderTable);
+    document.getElementById(id).addEventListener('change', renderTable);
+  });
+
+  document.getElementById('btnExport').addEventListener('click', () => {
+    exportIncidentsToExcel(filtered(), `domalerte_export_${new Date().toISOString().slice(0,10)}.xlsx`);
+  });
+
+  document.getElementById('cancelDelete').addEventListener('click', () => { pendingDeleteId = null; document.getElementById('confirmBackdrop').style.display = 'none'; });
+  document.getElementById('confirmDelete').addEventListener('click', async () => {
+    if (!pendingDeleteId) return;
+    const btn = document.getElementById('confirmDelete');
+    btn.disabled = true; btn.textContent = 'Suppression…';
+    try{
+      await deleteIncident(pendingDeleteId);
+      ALL = ALL.filter(i => i.id !== pendingDeleteId);
+      populateFilterOptions();
+      renderTable();
+    }catch(err){
+      document.getElementById('banner').innerHTML = `<div class="banner banner-error">Échec de la suppression : ${escapeHtml(err.message)}</div>`;
+    }finally{
+      btn.disabled = false; btn.textContent = 'Supprimer';
+      document.getElementById('confirmBackdrop').style.display = 'none';
+      pendingDeleteId = null;
+    }
+  });
+
+  async function boot(){
+    document.getElementById('banner').innerHTML = `<div class="banner banner-info">Chargement des fiches…</div>`;
+    try{
+      ALL = await loadIncidents();
+      document.getElementById('banner').innerHTML = '';
+      populateFilterOptions();
+      renderTable();
+    }catch(err){
+      document.getElementById('banner').innerHTML = `<div class="banner banner-error">Erreur de chargement : ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  boot();
+</script>
+</body>
+</html>

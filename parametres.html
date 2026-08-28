@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paramètres — DomAlerte</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar" id="topbar"></header>
+<nav class="mainnav" id="mainnav"></nav>
+
+<main class="shell">
+  <div class="page-head">
+    <div>
+      <h1>Paramètres</h1>
+      <p>Connexion à la base de données et gestion des comptes.</p>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card__head"><h2>Base de données GitHub</h2></div>
+      <div class="card__pad">
+        <div id="connBanner"></div>
+        <p style="font-size:12.5px; color:var(--ink-soft); margin-top:0;">
+          Stockage : <code class="k" id="repoLabel">—</code><br>
+          Fichiers : <code class="k">data/incidents.json</code> · <code class="k">data/users.json</code>
+        </p>
+        <form id="formConn">
+          <div class="form-grid">
+            <div class="field"><label class="req">Propriétaire</label><input type="text" id="cOwner" required></div>
+            <div class="field"><label class="req">Dépôt</label><input type="text" id="cRepo" required></div>
+            <div class="field"><label>Branche</label><input type="text" id="cBranch" value="main"></div>
+            <div class="field span-full"><label class="req">Token GitHub</label><input type="password" id="cToken" placeholder="Laisser vide pour ne pas modifier"></div>
+          </div>
+          <div class="pillbar" style="justify-content:flex-end;">
+            <button type="button" class="btn btn-ghost" id="btnTest">Tester la connexion</button>
+            <button type="submit" class="btn btn-primary">Enregistrer</button>
+          </div>
+        </form>
+        <p class="note" style="margin-top:10px;">Le token est stocké uniquement dans ce navigateur. Utilisez un dépôt <strong>privé</strong> : ces données contiennent des informations personnelles sensibles (identité, faits relatifs à des personnes).</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card__head"><h2>Mon compte</h2></div>
+      <div class="card__pad">
+        <div id="pwBanner"></div>
+        <form id="formPw">
+          <div class="form-grid">
+            <div class="field"><label class="req">Nouveau mot de passe</label><input type="password" id="pwNew" minlength="4" required></div>
+            <div class="field"><label class="req">Confirmer</label><input type="password" id="pwConfirm" minlength="4" required></div>
+          </div>
+          <div class="pillbar" style="justify-content:flex-end;">
+            <button type="submit" class="btn btn-primary">Modifier mon mot de passe</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="usersCard" style="display:none;">
+    <div class="card__head">
+      <h2>Gestion des comptes utilisateurs</h2>
+      <button class="btn btn-primary btn-sm" id="btnShowAdd">+ Ajouter un utilisateur</button>
+    </div>
+    <div class="card__pad">
+      <div id="usersBanner"></div>
+
+      <form id="formAddUser" style="display:none; border:1px solid var(--line); border-radius:var(--radius-md); padding:16px; margin-bottom:18px; background:var(--paper);">
+        <div class="form-grid">
+          <div class="field"><label class="req">Nom complet</label><input type="text" id="uNom" required></div>
+          <div class="field"><label class="req">Identifiant</label><input type="text" id="uLogin" required></div>
+          <div class="field">
+            <label class="req">Rôle</label>
+            <select id="uRole" required>
+              <option value="gestionnaire">Gestionnaire</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div class="field"><label class="req">Mot de passe initial</label><input type="password" id="uPass" minlength="4" required></div>
+        </div>
+        <div class="pillbar" style="justify-content:flex-end;">
+          <button type="button" class="btn btn-ghost" id="btnCancelAdd">Annuler</button>
+          <button type="submit" class="btn btn-primary">Créer le compte</button>
+        </div>
+      </form>
+
+      <table class="data" id="usersTable">
+        <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Créé le</th><th></th></tr></thead>
+        <tbody id="usersBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<div class="modal-backdrop" id="confirmBackdrop" style="display:none;">
+  <div class="modal">
+    <h3>Supprimer ce compte ?</h3>
+    <p id="confirmText"></p>
+    <div class="row">
+      <button class="btn btn-ghost" id="cancelDelete">Annuler</button>
+      <button class="btn btn-danger" id="confirmDelete">Supprimer</button>
+    </div>
+  </div>
+</div>
+
+<script src="github-db.js"></script>
+<script src="auth.js"></script>
+<script src="app-data.js"></script>
+<script>
+  const session = AUTH.requireSession();
+  renderChrome('parametres.html');
+
+  function banner(id, kind, msg){
+    document.getElementById(id).innerHTML = `<div class="banner banner-${kind}">${msg}</div>`;
+  }
+
+  function loadConnForm(){
+    const c = GHDB.cfg();
+    document.getElementById('cOwner').value = c.owner;
+    document.getElementById('cRepo').value = c.repo;
+    document.getElementById('cBranch').value = c.branch;
+    document.getElementById('repoLabel').textContent = c.owner && c.repo ? `github.com/${c.owner}/${c.repo} (${c.branch})` : '—';
+  }
+
+  document.getElementById('btnTest').addEventListener('click', async () => {
+    banner('connBanner', 'info', 'Test en cours…');
+    const res = await GHDB.testConnection();
+    if (res.ok) banner('connBanner', 'ok', `Connexion réussie à <strong>${res.fullName}</strong>${res.private ? ' (privé)' : ' — <strong>dépôt public</strong>, à sécuriser'}.`);
+    else banner('connBanner', 'error', res.error);
+  });
+
+  document.getElementById('formConn').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const token = document.getElementById('cToken').value.trim();
+    GHDB.saveCfg({
+      owner: document.getElementById('cOwner').value.trim(),
+      repo: document.getElementById('cRepo').value.trim(),
+      branch: document.getElementById('cBranch').value.trim() || 'main',
+      ...(token ? { token } : {}),
+    });
+    document.getElementById('cToken').value = '';
+    loadConnForm();
+    banner('connBanner', 'ok', 'Configuration enregistrée sur cet appareil.');
+  });
+
+  document.getElementById('formPw').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const a = document.getElementById('pwNew').value, b = document.getElementById('pwConfirm').value;
+    if (a !== b){ banner('pwBanner', 'error', 'Les mots de passe ne correspondent pas.'); return; }
+    banner('pwBanner', 'info', 'Mise à jour…');
+    try{
+      await AUTH.changePassword(session.login, a);
+      banner('pwBanner', 'ok', 'Mot de passe modifié.');
+      document.getElementById('formPw').reset();
+    }catch(err){
+      banner('pwBanner', 'error', 'Échec : ' + err.message);
+    }
+  });
+
+  // ---- utilisateurs (admin only) ----
+  let usersCache = [];
+  let pendingDelete = null;
+
+  async function loadUsersTable(){
+    if (session.role !== 'admin') return;
+    document.getElementById('usersCard').style.display = 'block';
+    try{
+      usersCache = await AUTH.loadUsers();
+      document.getElementById('usersBody').innerHTML = usersCache.map(u => `
+        <tr>
+          <td>${escapeHtml(u.nom)}</td>
+          <td>${escapeHtml(u.login)}</td>
+          <td><span class="tag ${u.role==='admin'?'tag-oui':'tag-non'}">${u.role}</span></td>
+          <td>${u.createdAt ? new Date(u.createdAt).toLocaleDateString('fr-FR') : '—'}</td>
+          <td>${u.login !== session.login ? `<button class="btn btn-danger btn-sm" data-del="${u.login}">Supprimer</button>` : '<span class="hint">— vous —</span>'}</td>
+        </tr>
+      `).join('');
+      document.getElementById('usersBody').querySelectorAll('[data-del]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          pendingDelete = btn.dataset.del;
+          document.getElementById('confirmText').textContent = `Le compte « ${pendingDelete} » perdra l'accès à DomAlerte.`;
+          document.getElementById('confirmBackdrop').style.display = 'flex';
+        });
+      });
+    }catch(err){
+      banner('usersBanner', 'error', 'Impossible de charger les comptes : ' + err.message);
+    }
+  }
+
+  document.getElementById('btnShowAdd').addEventListener('click', () => {
+    document.getElementById('formAddUser').style.display = 'block';
+  });
+  document.getElementById('btnCancelAdd').addEventListener('click', () => {
+    document.getElementById('formAddUser').style.display = 'none';
+    document.getElementById('formAddUser').reset();
+  });
+
+  document.getElementById('formAddUser').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    banner('usersBanner', 'info', 'Création du compte…');
+    try{
+      await AUTH.addUser({
+        login: document.getElementById('uLogin').value,
+        nom: document.getElementById('uNom').value,
+        role: document.getElementById('uRole').value,
+        password: document.getElementById('uPass').value,
+      });
+      document.getElementById('formAddUser').reset();
+      document.getElementById('formAddUser').style.display = 'none';
+      banner('usersBanner', 'ok', 'Compte créé.');
+      loadUsersTable();
+    }catch(err){
+      banner('usersBanner', 'error', 'Échec : ' + err.message);
+    }
+  });
+
+  document.getElementById('cancelDelete').addEventListener('click', () => { pendingDelete = null; document.getElementById('confirmBackdrop').style.display = 'none'; });
+  document.getElementById('confirmDelete').addEventListener('click', async () => {
+    if (!pendingDelete) return;
+    try{
+      await AUTH.removeUser(pendingDelete);
+      banner('usersBanner', 'ok', 'Compte supprimé.');
+      loadUsersTable();
+    }catch(err){
+      banner('usersBanner', 'error', 'Échec : ' + err.message);
+    }finally{
+      document.getElementById('confirmBackdrop').style.display = 'none';
+      pendingDelete = null;
+    }
+  });
+
+  loadConnForm();
+  loadUsersTable();
+</script>
+</body>
+</html>

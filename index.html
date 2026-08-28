@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connexion — DomAlerte</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body{ background:none; }
+  .step{ display:none; }
+  .step.active{ display:block; }
+  .backlink{ font-size:12px; color:var(--ink-faint); background:none; border:none; cursor:pointer; padding:0; margin-top:14px; }
+  .backlink:hover{ color:var(--navy); text-decoration:underline; }
+</style>
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-mark">DA</div>
+
+    <!-- Étape 1 : connexion au dépôt GitHub (une fois par appareil) -->
+    <div class="step" id="stepConnect">
+      <h1>Connexion à la base</h1>
+      <p class="sub">Renseignez le dépôt GitHub qui sert de base de données partagée pour DomAlerte.</p>
+      <div id="connectBanner"></div>
+      <form id="formConnect">
+        <div class="field">
+          <label class="req" for="fOwner">Propriétaire (compte / organisation)</label>
+          <input type="text" id="fOwner" placeholder="ex. DomoQVCTSST" value="DomoQVCTSST" required>
+        </div>
+        <div class="field">
+          <label class="req" for="fRepo">Nom du dépôt</label>
+          <input type="text" id="fRepo" placeholder="ex. Dom-Alerte" value="Dom-Alerte" required>
+        </div>
+        <div class="field">
+          <label for="fBranch">Branche</label>
+          <input type="text" id="fBranch" placeholder="main" value="main">
+        </div>
+        <div class="field">
+          <label class="req" for="fToken">Token GitHub (classic, scope <code class="k">repo</code>)</label>
+          <input type="password" id="fToken" placeholder="ghp_…" required>
+          <div class="note">Stocké uniquement dans ce navigateur — jamais envoyé ailleurs qu'à GitHub.</div>
+        </div>
+        <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Se connecter au dépôt</button>
+      </form>
+      <button class="backlink" id="backToLogin" style="display:none;">← Déjà connecté depuis cet appareil ? Revenir à la connexion</button>
+    </div>
+
+    <!-- Étape 2a : première utilisation, création du compte admin -->
+    <div class="step" id="stepBootstrap">
+      <h1>Créer le compte administrateur</h1>
+      <p class="sub">Aucun utilisateur n'existe encore sur ce dépôt. Créez le premier compte (administrateur).</p>
+      <div id="bootstrapBanner"></div>
+      <form id="formBootstrap">
+        <div class="field">
+          <label class="req" for="bNom">Nom complet</label>
+          <input type="text" id="bNom" required>
+        </div>
+        <div class="field">
+          <label class="req" for="bLogin">Identifiant</label>
+          <input type="text" id="bLogin" placeholder="ex. l.dupont" required>
+        </div>
+        <div class="field">
+          <label class="req" for="bPass">Mot de passe</label>
+          <input type="password" id="bPass" required minlength="4">
+        </div>
+        <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Créer le compte et continuer</button>
+      </form>
+    </div>
+
+    <!-- Étape 2b : connexion normale -->
+    <div class="step" id="stepLogin">
+      <h1>Connexion</h1>
+      <p class="sub">Accédez au suivi des incidents DomAlerte.</p>
+      <div id="loginBanner"></div>
+      <form id="formLogin">
+        <div class="field">
+          <label class="req" for="lLogin">Identifiant</label>
+          <input type="text" id="lLogin" required autofocus>
+        </div>
+        <div class="field">
+          <label class="req" for="lPass">Mot de passe</label>
+          <input type="password" id="lPass" required>
+        </div>
+        <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Se connecter</button>
+      </form>
+      <button class="backlink" id="changeRepo">← Changer de dépôt / de token</button>
+    </div>
+  </div>
+</div>
+
+<script src="github-db.js"></script>
+<script src="auth.js"></script>
+<script>
+  function showStep(id){
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+  function banner(elId, kind, msg){
+    document.getElementById(elId).innerHTML = `<div class="banner banner-${kind}">${msg}</div>`;
+  }
+
+  async function init(){
+    if (AUTH.session() && GHDB.isConfigured()){
+      window.location.href = 'dashboard.html';
+      return;
+    }
+    if (GHDB.isConfigured()){
+      const c = GHDB.cfg();
+      document.getElementById('fOwner').value = c.owner;
+      document.getElementById('fRepo').value = c.repo;
+      document.getElementById('fBranch').value = c.branch;
+      document.getElementById('backToLogin').style.display = 'block';
+      document.getElementById('backToLogin').onclick = () => decideStepAfterConnect();
+    }
+    showStep('stepConnect');
+  }
+
+  document.getElementById('formConnect').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const owner  = document.getElementById('fOwner').value.trim();
+    const repo   = document.getElementById('fRepo').value.trim();
+    const branch = document.getElementById('fBranch').value.trim() || 'main';
+    const token  = document.getElementById('fToken').value.trim();
+    GHDB.saveCfg({ owner, repo, branch, token });
+    banner('connectBanner', 'info', 'Vérification de la connexion…');
+    const test = await GHDB.testConnection();
+    if (!test.ok){
+      banner('connectBanner', 'error', test.error);
+      return;
+    }
+    if (!test.private){
+      banner('connectBanner', 'warn', 'Ce dépôt est <strong>public</strong> : les données DomAlerte contiennent des informations personnelles sensibles. Passez-le en privé dans les réglages GitHub avant de continuer.');
+    }
+    await decideStepAfterConnect();
+  });
+
+  async function decideStepAfterConnect(){
+    try{
+      const users = await AUTH.loadUsers();
+      if (!users || users.length === 0){
+        showStep('stepBootstrap');
+      } else {
+        showStep('stepLogin');
+      }
+    }catch(err){
+      banner('connectBanner', 'error', 'Connecté, mais impossible de lire les utilisateurs : ' + err.message);
+      showStep('stepConnect');
+    }
+  }
+
+  document.getElementById('formBootstrap').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nom = document.getElementById('bNom').value;
+    const login = document.getElementById('bLogin').value;
+    const pass = document.getElementById('bPass').value;
+    banner('bootstrapBanner', 'info', 'Création du compte…');
+    try{
+      await AUTH.bootstrapFirstAdmin(login, nom, pass);
+      const res = await AUTH.login(login, pass);
+      if (res.ok){ window.location.href = 'dashboard.html'; }
+      else { banner('bootstrapBanner', 'error', res.error); showStep('stepLogin'); }
+    }catch(err){
+      banner('bootstrapBanner', 'error', 'Échec de la création : ' + err.message);
+    }
+  });
+
+  document.getElementById('formLogin').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const login = document.getElementById('lLogin').value;
+    const pass = document.getElementById('lPass').value;
+    banner('loginBanner', 'info', 'Connexion…');
+    try{
+      const res = await AUTH.login(login, pass);
+      if (res.ok){ window.location.href = 'dashboard.html'; }
+      else { banner('loginBanner', 'error', res.error); }
+    }catch(err){
+      banner('loginBanner', 'error', 'Erreur : ' + err.message);
+    }
+  });
+
+  document.getElementById('changeRepo').addEventListener('click', () => showStep('stepConnect'));
+
+  init();
+</script>
+</body>
+</html>

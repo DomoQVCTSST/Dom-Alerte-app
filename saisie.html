@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nouvelle fiche — DomAlerte</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar" id="topbar"></header>
+<nav class="mainnav" id="mainnav"></nav>
+
+<main class="shell">
+  <div class="page-head">
+    <div>
+      <h1 id="pageTitle">Nouvelle fiche incident</h1>
+      <p>Tous les champs marqués d'un * sont requis. Les autres peuvent être complétés ultérieurement lors du suivi.</p>
+    </div>
+  </div>
+
+  <div id="banner"></div>
+
+  <form id="form" class="card" style="display:none;">
+    <div class="card__pad">
+
+      <fieldset>
+        <legend class="section-title">Identification</legend>
+        <div class="form-grid">
+          <div class="field"><label class="req">Nom</label><input type="text" id="nom" required></div>
+          <div class="field"><label class="req">Prénom</label><input type="text" id="prenom" required></div>
+          <div class="field"><label class="req">Sexe</label><select id="sexe" required></select></div>
+          <div class="field"><label class="req">Date de l'incident</label><input type="date" id="date" required></div>
+          <div class="field"><label class="req">Poste occupé</label><select id="poste" required></select></div>
+          <div class="field"><label class="req">Agence / direction territoriale</label><select id="agence" required></select></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="section-title">Les faits</legend>
+        <div class="form-grid">
+          <div class="field"><label class="req">Nature des faits</label><select id="natureFaits" required></select></div>
+          <div class="field"><label>Activité exercée lors de l'incident</label><select id="activite"></select></div>
+          <div class="field"><label>Contexte</label><select id="contexte"></select></div>
+          <div class="field"><label>Auteur des faits</label><select id="auteurFaits"></select></div>
+          <div class="field"><label>Lieu des faits</label><select id="lieuFaits"></select></div>
+          <div class="field"><label>Commune</label><input type="text" id="commune"></div>
+          <div class="field span-full"><label>Circonstances détaillées</label><textarea id="circonstances" rows="5" placeholder="Description factuelle du déroulé des faits…"></textarea></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="section-title">Réponse immédiate</legend>
+        <div class="form-grid">
+          <div class="field"><label>Appel police / gendarmerie</label><div class="toggle-yn" data-field="appelPolice"></div></div>
+          <div class="field"><label>Intervention police / gendarmerie</label><div class="toggle-yn" data-field="interventionPolice"></div></div>
+          <div class="field"><label>Mail manager</label><div class="toggle-yn" data-field="mailManager"></div></div>
+          <div class="field"><label>DOMALERTE déclenchée</label><div class="toggle-yn" data-field="domalerte"></div></div>
+          <div class="field"><label>Dépôt de plainte</label><div class="toggle-yn" data-field="depotPlainte"></div></div>
+          <div class="field"><label>Main courante</label><div class="toggle-yn" data-field="mainCourante"></div></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="section-title">Suivi RH &amp; juridique</legend>
+        <div class="form-grid">
+          <div class="field"><label>Mutation envisagée</label><div class="toggle-yn" data-field="mutationEnvisagee"></div></div>
+          <div class="field"><label>ITT judiciaire</label><div class="toggle-yn" data-field="ittJudiciaire"></div></div>
+          <div class="field"><label>Convocation locataire</label><div class="toggle-yn" data-field="convocationLocataire"></div></div>
+          <div class="field"><label>Date de convocation</label><input type="date" id="dateConvocation"></div>
+          <div class="field"><label>DATI utilisé</label><div class="toggle-yn" data-field="datiUtilise"></div></div>
+          <div class="field"><label>Assermenté</label><div class="toggle-yn" data-field="assermente"></div></div>
+          <div class="field"><label>Orientations</label><select id="orientations"></select></div>
+          <div class="field"><label>Suivi responsable / DT</label><select id="suiviResponsable"></select></div>
+          <div class="field"><label>Suivi (judiciaire)</label><select id="suivi"></select></div>
+          <div class="field"><label>Suivi suite aux faits</label><select id="suiviSuiteFaits"></select></div>
+          <div class="field"><label>Suivi PSTR</label><select id="suiviPstr"></select></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="section-title">Pièces jointes &amp; commentaires</legend>
+        <div class="form-grid">
+          <div class="field"><label>PJ1 (référence ou lien)</label><input type="text" id="pj1" placeholder="Nom du fichier ou lien"></div>
+          <div class="field"><label>PJ2 (référence ou lien)</label><input type="text" id="pj2" placeholder="Nom du fichier ou lien"></div>
+          <div class="field span-full"><label>Commentaires</label><textarea id="commentaires" rows="3"></textarea></div>
+        </div>
+        <p class="section-sub" style="margin-top:6px;">Le dépôt de fichiers n'est pas géré ici : indiquez une référence, ou un lien vers le document stocké ailleurs (Drive, GED…).</p>
+      </fieldset>
+
+      <div class="pillbar" style="justify-content:flex-end; border-top:1px solid var(--line); padding-top:18px;">
+        <a href="fiches.html" class="btn btn-ghost">Annuler</a>
+        <button type="submit" class="btn btn-primary" id="btnSave">Enregistrer la fiche</button>
+      </div>
+    </div>
+  </form>
+</main>
+
+<script src="github-db.js"></script>
+<script src="auth.js"></script>
+<script src="app-data.js"></script>
+<script>
+  const session = AUTH.requireSession();
+  renderChrome('saisie.html');
+
+  const params = new URLSearchParams(window.location.search);
+  const editId = params.get('id');
+  let editingIncident = null;
+
+  const TOGGLE_FIELDS = ['appelPolice','interventionPolice','mailManager','domalerte','depotPlainte',
+    'mainCourante','mutationEnvisagee','ittJudiciaire','convocationLocataire','datiUtilise','assermente'];
+
+  function buildToggles(current){
+    document.querySelectorAll('.toggle-yn').forEach(container => {
+      const field = container.dataset.field;
+      const val = (current && current[field]) || '';
+      container.innerHTML = `
+        <button type="button" class="on-oui ${val==='Oui'?'active':''}" data-val="Oui">Oui</button>
+        <button type="button" class="on-non ${val==='Non'?'active':''}" data-val="Non">Non</button>
+      `;
+      container.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          container.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        });
+      });
+    });
+  }
+
+  function toggleValue(field){
+    const container = document.querySelector(`.toggle-yn[data-field="${field}"]`);
+    const active = container.querySelector('button.active');
+    return active ? active.dataset.val : '';
+  }
+
+  function fillForm(inc){
+    ['nom','prenom','date','commune','circonstances','dateConvocation','pj1','pj2','commentaires']
+      .forEach(f => { if (document.getElementById(f)) document.getElementById(f).value = inc[f] || ''; });
+    buildOptionList('sexe', OPTIONS.sexe, inc.sexe);
+    buildOptionList('poste', OPTIONS.poste, inc.poste, true);
+    buildOptionList('agence', OPTIONS.agence, inc.agence, true);
+    buildOptionList('natureFaits', OPTIONS.natureFaits, inc.natureFaits, true);
+    buildOptionList('activite', OPTIONS.activite, inc.activite, true);
+    buildOptionList('contexte', OPTIONS.contexte, inc.contexte, true);
+    buildOptionList('auteurFaits', OPTIONS.auteurFaits, inc.auteurFaits, true);
+    buildOptionList('lieuFaits', OPTIONS.lieuFaits, inc.lieuFaits, true);
+    buildOptionList('orientations', OPTIONS.orientations, inc.orientations, true);
+    buildOptionList('suiviResponsable', OPTIONS.suiviResponsable, inc.suiviResponsable, true);
+    buildOptionList('suivi', OPTIONS.suivi, inc.suivi, true);
+    buildOptionList('suiviSuiteFaits', OPTIONS.suiviSuiteFaits, inc.suiviSuiteFaits, true);
+    buildOptionList('suiviPstr', OPTIONS.suiviPstr, inc.suiviPstr, true);
+    buildToggles(inc);
+  }
+
+  async function boot(){
+    if (editId){
+      document.getElementById('pageTitle').textContent = 'Modifier la fiche';
+      document.getElementById('banner').innerHTML = `<div class="banner banner-info">Chargement de la fiche…</div>`;
+      try{
+        const all = await loadIncidents();
+        editingIncident = all.find(i => i.id === editId);
+        if (!editingIncident){
+          document.getElementById('banner').innerHTML = `<div class="banner banner-error">Fiche introuvable.</div>`;
+          return;
+        }
+        document.getElementById('banner').innerHTML = '';
+        fillForm(editingIncident);
+      }catch(err){
+        document.getElementById('banner').innerHTML = `<div class="banner banner-error">Erreur : ${escapeHtml(err.message)}</div>`;
+        return;
+      }
+    } else {
+      fillForm({});
+      document.getElementById('date').value = new Date().toISOString().slice(0,10);
+    }
+    document.getElementById('form').style.display = 'block';
+  }
+
+  document.getElementById('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btnSave');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement…';
+
+    const incident = {
+      id: editingIncident ? editingIncident.id : uid(),
+      nom: document.getElementById('nom').value.trim(),
+      prenom: document.getElementById('prenom').value.trim(),
+      sexe: document.getElementById('sexe').value,
+      date: document.getElementById('date').value,
+      poste: document.getElementById('poste').value,
+      agence: document.getElementById('agence').value,
+      natureFaits: document.getElementById('natureFaits').value,
+      activite: document.getElementById('activite').value,
+      contexte: document.getElementById('contexte').value,
+      auteurFaits: document.getElementById('auteurFaits').value,
+      lieuFaits: document.getElementById('lieuFaits').value,
+      commune: document.getElementById('commune').value.trim(),
+      circonstances: document.getElementById('circonstances').value.trim(),
+      appelPolice: toggleValue('appelPolice'),
+      interventionPolice: toggleValue('interventionPolice'),
+      mailManager: toggleValue('mailManager'),
+      mutationEnvisagee: toggleValue('mutationEnvisagee'),
+      domalerte: toggleValue('domalerte'),
+      depotPlainte: toggleValue('depotPlainte'),
+      mainCourante: toggleValue('mainCourante'),
+      orientations: document.getElementById('orientations').value,
+      suiviResponsable: document.getElementById('suiviResponsable').value,
+      suivi: document.getElementById('suivi').value,
+      ittJudiciaire: toggleValue('ittJudiciaire'),
+      suiviSuiteFaits: document.getElementById('suiviSuiteFaits').value,
+      convocationLocataire: toggleValue('convocationLocataire'),
+      dateConvocation: document.getElementById('dateConvocation').value,
+      datiUtilise: toggleValue('datiUtilise'),
+      suiviPstr: document.getElementById('suiviPstr').value,
+      pj1: document.getElementById('pj1').value.trim(),
+      pj2: document.getElementById('pj2').value.trim(),
+      commentaires: document.getElementById('commentaires').value.trim(),
+      assermente: toggleValue('assermente'),
+      createdAt: editingIncident ? editingIncident.createdAt : new Date().toISOString(),
+      createdBy: editingIncident ? editingIncident.createdBy : session.login,
+      updatedAt: new Date().toISOString(),
+      updatedBy: session.login,
+    };
+
+    try{
+      await saveIncident(incident, !editingIncident);
+      window.location.href = 'fiches.html';
+    }catch(err){
+      document.getElementById('banner').innerHTML = `<div class="banner banner-error">Échec de l'enregistrement : ${escapeHtml(err.message)}. Réessayez.</div>`;
+      btn.disabled = false;
+      btn.textContent = 'Enregistrer la fiche';
+    }
+  });
+
+  boot();
+</script>
+</body>
+</html>

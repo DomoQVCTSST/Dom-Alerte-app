@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tableau de bord — DomAlerte</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="topbar" id="topbar"></header>
+<nav class="mainnav" id="mainnav"></nav>
+
+<main class="shell">
+  <div class="page-head">
+    <div>
+      <h1>Tableau de bord</h1>
+      <p>Suivi des incidents déclarés — agressions et comportements inappropriés envers les collaborateurs.</p>
+    </div>
+    <div class="pillbar">
+      <select id="fYear" style="width:auto;"></select>
+      <select id="fAgence" style="width:auto; min-width:220px;"></select>
+      <button class="btn btn-ghost btn-sm" id="btnReset">Réinitialiser</button>
+      <button class="btn btn-ghost btn-sm" id="btnRefresh">↻ Actualiser</button>
+    </div>
+  </div>
+
+  <div id="banner"></div>
+
+  <div id="content" style="display:none;">
+    <div class="kpi-row" id="kpiRow"></div>
+
+    <div class="grid-2" style="margin-bottom:18px;">
+      <div class="card">
+        <div class="card__head"><h2>Évolution mensuelle des incidents</h2><span class="hint" id="hintYear"></span></div>
+        <div class="card__pad"><canvas id="chartMonth" height="200"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card__head"><h2>Nature des faits</h2></div>
+        <div class="card__pad"><canvas id="chartNature" height="200"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-bottom:18px;">
+      <div class="card">
+        <div class="card__head"><h2>Par direction territoriale</h2></div>
+        <div class="card__pad"><canvas id="chartAgence" height="220"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card__head"><h2>Sexe des collaborateurs</h2></div>
+        <div class="card__pad"><canvas id="chartSexe" height="220"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card__head"><h2>Contexte principal</h2></div>
+        <div class="card__pad"><canvas id="chartContexte" height="220"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card__head"><h2>Postes les plus concernés</h2></div>
+        <div class="card__pad"><canvas id="chartPoste" height="200"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card__head"><h2>Suites données</h2><span class="hint">Dépôt de plainte · main courante · convocation</span></div>
+        <div class="card__pad"><canvas id="chartSuites" height="200"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="empty" id="emptyState" style="display:none;">
+    <strong>Aucun incident enregistré pour l'instant.</strong>
+    Utilisez « Nouvelle fiche » pour déclarer un premier incident.
+  </div>
+</main>
+
+<script src="github-db.js"></script>
+<script src="auth.js"></script>
+<script src="app-data.js"></script>
+<script>
+  const session = AUTH.requireSession();
+  renderChrome('dashboard.html');
+
+  const PALETTE = ['#16324F','#A6392E','#96631A','#3F6B4B','#5B7FA6','#C97A70','#8A93A1','#7E2A21'];
+  let ALL = [];
+  let charts = {};
+
+  function destroyCharts(){ Object.values(charts).forEach(c => c && c.destroy()); charts = {}; }
+
+  function applyFilters(){
+    const year = document.getElementById('fYear').value;
+    const agence = document.getElementById('fAgence').value;
+    return ALL.filter(i => {
+      if (year && monthKey(i.date) && !i.date?.startsWith(year)) return false;
+      if (agence && i.agence !== agence) return false;
+      return true;
+    });
+  }
+
+  function countBy(list, key, opts){
+    const map = new Map();
+    list.forEach(i => {
+      let v = (i[key] || '').trim() || '(non renseigné)';
+      map.set(v, (map.get(v) || 0) + 1);
+    });
+    let entries = Array.from(map.entries()).sort((a,b) => b[1]-a[1]);
+    if (opts && opts.top){
+      const top = entries.slice(0, opts.top);
+      const rest = entries.slice(opts.top).reduce((s,e) => s+e[1], 0);
+      if (rest > 0) top.push(['Autres', rest]);
+      entries = top;
+    }
+    return entries;
+  }
+
+  function render(){
+    const list = applyFilters();
+    destroyCharts();
+
+    if (ALL.length === 0){
+      document.getElementById('content').style.display = 'none';
+      document.getElementById('emptyState').style.display = 'block';
+      return;
+    }
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
+    // ---- KPI ----
+    const total = list.length;
+    const pct = (n) => total ? Math.round((n/total)*100) : 0;
+    const nPlainte = list.filter(i => i.depotPlainte === 'Oui').length;
+    const nPolice = list.filter(i => i.interventionPolice === 'Oui').length;
+    const now = new Date();
+    const curMonth = now.toISOString().slice(0,7);
+    const prevMonth = new Date(now.getFullYear(), now.getMonth()-1, 1).toISOString().slice(0,7);
+    const nCurMonth = ALL.filter(i => i.date && i.date.startsWith(curMonth)).length;
+    const nPrevMonth = ALL.filter(i => i.date && i.date.startsWith(prevMonth)).length;
+    const delta = nCurMonth - nPrevMonth;
+
+    document.getElementById('kpiRow').innerHTML = `
+      <div class="kpi"><div class="kpi__label">Incidents (période)</div><div class="kpi__value">${total}</div></div>
+      <div class="kpi is-alert"><div class="kpi__label">Dépôts de plainte</div><div class="kpi__value">${nPlainte}</div><div class="kpi__delta">${pct(nPlainte)}% des incidents</div></div>
+      <div class="kpi"><div class="kpi__label">Intervention police / gend.</div><div class="kpi__value">${nPolice}</div><div class="kpi__delta">${pct(nPolice)}% des incidents</div></div>
+      <div class="kpi ${delta>0?'is-alert':(delta<0?'is-ok':'')}"><div class="kpi__label">Ce mois-ci</div><div class="kpi__value">${nCurMonth}</div><div class="kpi__delta">${delta===0?'stable':(delta>0?'+':'')+delta+' vs mois précédent'}</div></div>
+    `;
+
+    // ---- Évolution mensuelle ----
+    const year = document.getElementById('fYear').value || new Date().getFullYear().toString();
+    document.getElementById('hintYear').textContent = year;
+    const monthLabels = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
+    const monthCounts = new Array(12).fill(0);
+    list.forEach(i => {
+      if (i.date && i.date.startsWith(year)){
+        const m = parseInt(i.date.slice(5,7), 10) - 1;
+        if (m >= 0 && m < 12) monthCounts[m]++;
+      }
+    });
+    charts.month = new Chart(document.getElementById('chartMonth'), {
+      type: 'line',
+      data: { labels: monthLabels, datasets: [{ label: 'Incidents', data: monthCounts, borderColor: PALETTE[0], backgroundColor: 'rgba(22,50,79,.08)', fill:true, tension:.3, pointRadius:3 }] },
+      options: { plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
+    });
+
+    // ---- Nature des faits ----
+    const nature = countBy(list, 'natureFaits', {top:6});
+    charts.nature = new Chart(document.getElementById('chartNature'), {
+      type: 'bar',
+      data: { labels: nature.map(e=>e[0]), datasets:[{ label:'Incidents', data: nature.map(e=>e[1]), backgroundColor: PALETTE[1] }] },
+      options: { indexAxis:'y', plugins:{legend:{display:false}}, scales:{ x:{ beginAtZero:true, ticks:{precision:0} } } }
+    });
+
+    // ---- Agence ----
+    const agence = countBy(list, 'agence', {top:8});
+    charts.agence = new Chart(document.getElementById('chartAgence'), {
+      type: 'bar',
+      data: { labels: agence.map(e=>e[0]), datasets:[{ label:'Incidents', data: agence.map(e=>e[1]), backgroundColor: PALETTE[0] }] },
+      options: { plugins:{legend:{display:false}}, scales:{ x:{ ticks:{ autoSkip:false, maxRotation:60, minRotation:40, font:{size:10} } }, y:{ beginAtZero:true, ticks:{precision:0} } } }
+    });
+
+    // ---- Sexe ----
+    const sexe = countBy(list, 'sexe');
+    charts.sexe = new Chart(document.getElementById('chartSexe'), {
+      type: 'doughnut',
+      data: { labels: sexe.map(e=>e[0]), datasets:[{ data: sexe.map(e=>e[1]), backgroundColor: [PALETTE[0], PALETTE[2], PALETTE[4]] }] },
+      options: { plugins:{legend:{position:'bottom'}} }
+    });
+
+    // ---- Contexte ----
+    const contexte = countBy(list, 'contexte', {top:5});
+    charts.contexte = new Chart(document.getElementById('chartContexte'), {
+      type: 'doughnut',
+      data: { labels: contexte.map(e=>e[0]), datasets:[{ data: contexte.map(e=>e[1]), backgroundColor: PALETTE }] },
+      options: { plugins:{legend:{position:'bottom', labels:{boxWidth:10, font:{size:10.5}}}} }
+    });
+
+    // ---- Poste ----
+    const poste = countBy(list, 'poste', {top:8});
+    charts.poste = new Chart(document.getElementById('chartPoste'), {
+      type: 'bar',
+      data: { labels: poste.map(e=>e[0]), datasets:[{ label:'Incidents', data: poste.map(e=>e[1]), backgroundColor: PALETTE[3] }] },
+      options: { indexAxis:'y', plugins:{legend:{display:false}}, scales:{ x:{ beginAtZero:true, ticks:{precision:0} } } }
+    });
+
+    // ---- Suites données ----
+    const suitesLabels = ['Dépôt de plainte', 'Main courante', 'Convocation locataire', 'Intervention police'];
+    const suitesData = [
+      list.filter(i=>i.depotPlainte==='Oui').length,
+      list.filter(i=>i.mainCourante==='Oui').length,
+      list.filter(i=>i.convocationLocataire==='Oui').length,
+      list.filter(i=>i.interventionPolice==='Oui').length,
+    ];
+    charts.suites = new Chart(document.getElementById('chartSuites'), {
+      type: 'bar',
+      data: { labels: suitesLabels, datasets:[{ label:'Oui', data: suitesData, backgroundColor: PALETTE[1] }] },
+      options: { plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
+    });
+  }
+
+  function populateFilters(){
+    const years = Array.from(new Set(ALL.map(i => i.date ? i.date.slice(0,4) : null).filter(Boolean))).sort().reverse();
+    const curYear = new Date().getFullYear().toString();
+    if (!years.includes(curYear)) years.unshift(curYear);
+    const fYear = document.getElementById('fYear');
+    fYear.innerHTML = `<option value="">Toutes les années</option>` + years.map(y => `<option value="${y}" ${y===curYear?'selected':''}>${y}</option>`).join('');
+
+    const agences = Array.from(new Set(ALL.map(i => i.agence).filter(Boolean))).sort();
+    const fAgence = document.getElementById('fAgence');
+    fAgence.innerHTML = `<option value="">Toutes les DT / agences</option>` + agences.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
+  }
+
+  async function boot(){
+    document.getElementById('banner').innerHTML = `<div class="banner banner-info">Chargement des données…</div>`;
+    try{
+      ALL = await loadIncidents();
+      document.getElementById('banner').innerHTML = '';
+      populateFilters();
+      render();
+    }catch(err){
+      document.getElementById('banner').innerHTML = `<div class="banner banner-error">Erreur de chargement : ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  document.getElementById('fYear').addEventListener('change', render);
+  document.getElementById('fAgence').addEventListener('change', render);
+  document.getElementById('btnReset').addEventListener('click', () => { populateFilters(); render(); });
+  document.getElementById('btnRefresh').addEventListener('click', boot);
+
+  boot();
+</script>
+</body>
+</html>
