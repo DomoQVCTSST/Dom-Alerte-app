@@ -61,7 +61,10 @@ const AUTH = (() => {
       passHash: hash,
       createdAt: new Date().toISOString(),
     }];
-    await GHDB.putJSON(USERS_PATH, users, `Création du compte administrateur ${login}`, null);
+    // Le fichier users.json peut déjà exister (vide) sur le dépôt : on
+    // récupère son sha actuel pour que GitHub accepte la mise à jour.
+    const current = await GHDB.getJSON(USERS_PATH);
+    await GHDB.putJSON(USERS_PATH, users, `Création du compte administrateur ${login}`, current.sha);
     return users[0];
   }
 
