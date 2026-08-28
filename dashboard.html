@@ -35,6 +35,25 @@
   <div id="banner"></div>
 
   <div id="content" style="display:none;">
+    <div class="card" id="gaugeCard" style="margin-bottom:18px;">
+      <div class="card__head">
+        <h2>Indicateur agression totale</h2>
+        <span class="hint">Sur la période et le périmètre filtrés</span>
+      </div>
+      <div class="card__pad" style="display:flex; align-items:center; gap:24px; flex-wrap:wrap;">
+        <div id="gaugeSvgWrap" style="flex:0 0 auto; line-height:0;"></div>
+        <div style="flex:1; min-width:200px;">
+          <div class="kpi__label">Total incivilités</div>
+          <div class="kpi__value" id="gaugeValueLabel" style="font-size:36px;">0</div>
+          <div class="pillbar" style="margin-top:12px; gap:16px; row-gap:6px;">
+            <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);"><span style="width:10px;height:10px;border-radius:50%;background:#3F6B4B;display:inline-block;"></span>0–20 · maîtrisé</span>
+            <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);"><span style="width:10px;height:10px;border-radius:50%;background:#96631A;display:inline-block;"></span>20–60 · vigilance</span>
+            <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);"><span style="width:10px;height:10px;border-radius:50%;background:#A6392E;display:inline-block;"></span>60–100 · alerte</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="kpi-row" id="kpiRow"></div>
 
     <div class="grid-2" style="margin-bottom:18px;">
@@ -94,6 +113,51 @@
 
   function destroyCharts(){ Object.values(charts).forEach(c => c && c.destroy()); charts = {}; }
 
+  // ---- Jauge "Indicateur agression totale" (reprend l'indicateur du classeur Excel v2) ----
+  function polarToCartesian(cx, cy, r, angleDeg){
+    const rad = (angleDeg - 90) * Math.PI / 180;
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  }
+  function arcPath(cx, cy, r, a0, a1){
+    const s = polarToCartesian(cx, cy, r, a0);
+    const e = polarToCartesian(cx, cy, r, a1);
+    const large = (a1 - a0) <= 180 ? 0 : 1;
+    return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
+  }
+  const GAUGE_ZONES = [
+    { from: 0,  to: 20,  color: '#3F6B4B' },
+    { from: 20, to: 60,  color: '#96631A' },
+    { from: 60, to: 100, color: '#A6392E' },
+  ];
+  function gaugeColorFor(value){
+    const z = GAUGE_ZONES.find(z => value <= z.to) || GAUGE_ZONES[GAUGE_ZONES.length - 1];
+    return z.color;
+  }
+  function buildGaugeSVG(value, max){
+    const cx = 150, cy = 128, r = 104, sw = 24;
+    const toAngle = (v) => -90 + (Math.min(Math.max(v,0), max) / max) * 180;
+    const arcs = GAUGE_ZONES.map(z =>
+      `<path d="${arcPath(cx, cy, r, toAngle(z.from), toAngle(z.to))}" stroke="${z.color}" stroke-width="${sw}" fill="none"/>`
+    ).join('');
+    const needleAngle = toAngle(value);
+    const tip = polarToCartesian(cx, cy, r - 16, needleAngle);
+    const back = polarToCartesian(cx, cy, 16, needleAngle + 180);
+    return `
+      <svg viewBox="0 0 300 158" width="280" height="148" xmlns="http://www.w3.org/2000/svg">
+        ${arcs}
+        <line x1="${back.x.toFixed(2)}" y1="${back.y.toFixed(2)}" x2="${tip.x.toFixed(2)}" y2="${tip.y.toFixed(2)}" stroke="#1C222B" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="${cx}" cy="${cy}" r="9" fill="#1C222B"/>
+        <text x="18" y="150" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8A93A1">0</text>
+        <text x="266" y="150" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8A93A1">100</text>
+      </svg>`;
+  }
+  function renderGauge(total){
+    document.getElementById('gaugeSvgWrap').innerHTML = buildGaugeSVG(total, 100);
+    const label = document.getElementById('gaugeValueLabel');
+    label.textContent = total;
+    label.style.color = gaugeColorFor(total);
+  }
+
   function applyFilters(){
     const year = document.getElementById('fYear').value;
     const agence = document.getElementById('fAgence').value;
@@ -140,6 +204,7 @@
 
     // ---- KPI ----
     const total = list.length;
+    renderGauge(total);
     const pct = (n) => total ? Math.round((n/total)*100) : 0;
     const nPlainte = list.filter(i => i.depotPlainte === 'Oui').length;
     const nPolice = list.filter(i => i.interventionPolice === 'Oui').length;
