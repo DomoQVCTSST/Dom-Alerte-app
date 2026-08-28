@@ -19,6 +19,13 @@
     </div>
     <div class="pillbar">
       <select id="fYear" style="width:auto;"></select>
+      <select id="fQuarter" style="width:auto;">
+        <option value="">Tous les trimestres</option>
+        <option value="1">T1 · janv-mars</option>
+        <option value="2">T2 · avr-juin</option>
+        <option value="3">T3 · juil-sept</option>
+        <option value="4">T4 · oct-déc</option>
+      </select>
       <select id="fAgence" style="width:auto; min-width:220px;"></select>
       <button class="btn btn-ghost btn-sm" id="btnReset">Réinitialiser</button>
       <button class="btn btn-ghost btn-sm" id="btnRefresh">↻ Actualiser</button>
@@ -90,9 +97,15 @@
   function applyFilters(){
     const year = document.getElementById('fYear').value;
     const agence = document.getElementById('fAgence').value;
+    const quarter = document.getElementById('fQuarter').value;
     return ALL.filter(i => {
       if (year && monthKey(i.date) && !i.date?.startsWith(year)) return false;
       if (agence && i.agence !== agence) return false;
+      if (quarter && i.date){
+        const m = parseInt(i.date.slice(5,7), 10);
+        const q = Math.ceil(m / 3);
+        if (String(q) !== quarter) return false;
+      }
       return true;
     });
   }
@@ -241,8 +254,9 @@
   }
 
   document.getElementById('fYear').addEventListener('change', render);
+  document.getElementById('fQuarter').addEventListener('change', render);
   document.getElementById('fAgence').addEventListener('change', render);
-  document.getElementById('btnReset').addEventListener('click', () => { populateFilters(); render(); });
+  document.getElementById('btnReset').addEventListener('click', () => { populateFilters(); document.getElementById('fQuarter').value = ''; render(); });
   document.getElementById('btnRefresh').addEventListener('click', boot);
 
   boot();
